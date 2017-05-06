@@ -1,0 +1,317 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue May 10 16:27:09 2016
+
+@author: JOreilly
+"""
+
+#import what you need: numpy, math, file io?
+import math
+import random
+import numpy as np
+#import matplotlib.pyplot as plt
+
+#constants
+
+FALSE = 0
+TRUE = 1
+
+c = 299792458 #speed of light in m/s
+nair = 1.0 #index of refraction in air
+nmed = 1.33 #index of refraction of the medium
+wvlngth = 808 * 10 ** -9 #wavelength of light in meters
+cohL = 3 #in meters
+
+maxRad = 0.05
+radBin = 100
+
+mua = 1 #absorption coefficient in m^-1
+mus = 255 #scattering coefficient in m^-1
+
+Db = 10 ** -12 #brownian motion diffusion constant in m^2 * s^-1
+
+#derived constants
+
+wvnmbr = 2 * math.pi / wvlngth #wavenumber might need to be squared?
+v = c / nmed #speed of light in medium
+lstar = 1 / mus
+
+#samples and binning
+
+samps = 100000 #number of photons to try
+
+tlim = 1.0 * 10 ** -3 #time limit in seconds
+thick = 1.0 #thickness of semi-infinite sample
+
+Lbins = 500 #number of path length bins
+Ybins = 500 #number of momentum transfer bins
+
+Llistlist = [] #list of lengths at diff radii
+Ylistlist = []
+nlistlist = []
+
+for app in range(0,radBin):
+    
+    Llistlist.append(np.array(()))
+    Ylistlist.append(np.array(()))
+    nlistlist.append(np.array(()))
+
+g2Lglist = []
+g2Lllist = []
+g2Ylist = []
+g2nlist = []
+
+for g2int in range(0,radBin):
+    
+    g2Lglist.append(np.array(()))
+    g2Lllist.append(np.array(()))
+    g2Ylist.append(np.array(()))
+    g2nlist.append(np.array(()))
+    
+taus = np.array((10 ** -6,3 * 10 ** -6,10 ** -5,3 * 10 ** -5,10 ** -4,3 * 10 ** -4,10 ** -3,3 * 10 ** -3,10 ** -2,3 * 10 ** -2,10 ** -1,3 * 10 ** -1,1))
+
+#loop through photons to migrate
+
+for gam in range(0,int(samps)):
+    
+    if (gam % (samps / 1000) == 0):
+        
+        print(str(gam / samps))
+        
+    L = 0.0
+    Y = 0.0
+    n = 0.0
+    
+    x = 0.0
+    y = 0.0
+    z = 0.0
+    
+    t = 0.0
+    
+    c1 = 0.0
+    c2 = 0.0
+    c3 = 1.0 #collimated along z axis b/c laser light
+    
+    OUTSIDE = FALSE
+    ABSORBED = FALSE
+        
+    while (t < tlim and not(OUTSIDE or ABSORBED)):
+                                
+        xold = x
+        yold = y
+        zold = z
+        
+        c1o = c1
+        c2o = c2
+        c3o = c3
+        
+        ls = -1 * math.log(random.random()) / mus
+        la = -1 * math.log(np.random.random()) / mua
+        
+        if (ls < la):
+
+            n += 1
+            
+            x = xold + ls * c1
+            y = yold + ls * c2
+            z = zold + ls * c3
+            
+            t += ls / v
+            
+            if (z < thick and z > 0):            
+            
+                phi = 2 * math.pi * random.random()
+                cphi = math.cos(phi)
+                sphi = math.sin(phi)
+                
+                theta = math.acos(1 - 2 * np.random.random())
+                ctheta = math.cos(theta)
+                stheta = math.sin(theta)
+                
+                c1 = stheta * cphi
+                c2 = stheta * sphi
+                c3 = ctheta
+                
+                L += ls
+                Y += 1 - c1 * c1o + c2 * c2o + c3 * c3o
+                
+            else:
+                
+                OUTSIDE = TRUE
+                
+        else:
+        
+            ABSORBED = TRUE
+            
+            x = xold + la * c1
+            y = yold + la * c2
+            z = zold + la * c3
+            
+            t += la / v
+            
+            if (z > thick or z < 0):
+                
+                OUTSIDE = TRUE
+                
+    #if photon ever makes it out of the medium, check if it went through the detector
+    if (z < 0):
+        
+       #interpolate position at boundary
+        xbound = (zold * (xold - x)) / (zold - z) + x
+        ybound = (zold * (yold - y)) / (zold - z) + y
+        Lbound = math.sqrt((xbound - xold) ** 2 + (ybound - yold) ** 2 + zold ** 2)
+        
+        L += Lbound
+        
+        #find out which, if any, detectors the photon passes through        
+        dist = math.sqrt(ybound ** 2 + xbound ** 2)
+        
+        if(dist < maxRad):
+            
+            Llistlist[int(dist / maxRad * radBin)] = np.append(Llistlist[int(dist / maxRad * radBin)],L)
+            Ylistlist[int(dist / maxRad * radBin)] = np.append(Ylistlist[int(dist / maxRad * radBin)],Y)
+            nlistlist[int(dist / maxRad * radBin)] = np.append(nlistlist[int(dist / maxRad * radBin)],n)
+        
+Lhistlist = []
+Yhistlist = []
+nhistlist = []
+    
+for histind in range(0,radBin):
+    
+    Lhist = np.zeros((Lbins))
+    Yhist = np.zeros((Ybins))
+    nhist = np.zeros((int(max(nlistlist[histind]))))
+    
+    Lmax = max(Llistlist[histind]) + 0.000000000001
+    Ymax = max(Ylistlist[histind]) + 0.000000000001
+    nmax = max(nlistlist[histind]) + 0.000000000001
+    
+    for lng in range(0,np.size(Llistlist[histind])):
+        
+        Lplace = int(Lbins * Llistlist[histind][lng] / Lmax)
+        Yplace = int(Ybins * Ylistlist[histind][lng] / Ymax)
+        nplace = int(nlistlist[histind][lng]-1)
+        
+        nhist[nplace] += 1
+        Yhist[Yplace] += 1
+        Lhist[Lplace] += 1
+        
+    Lhistlist.append(Lhist)
+    Yhistlist.append(Yhist)
+    nhistlist.append(nhist)
+    
+    print(str(np.size(nhistlist)))
+                
+for rind in range(0,radBin):
+    
+    Lmax = max(Llistlist[rind])
+    Ymax = max(Ylistlist[rind])
+    nmax = max(nlistlist[rind])
+    
+    events = np.size(Llistlist[rind])
+    
+    for tau in taus:
+        
+        Lgintegral = 0
+        Llintegral = 0
+    
+        for m in range(0,int(Lbins / 5)):
+            
+            Lm = (m + 0.5) * (Lmax / Lbins)
+            
+            for nah in range(0,int(Lbins / 5)):
+                
+                Ln = (nah + 0.5) * (Lmax / Lbins)
+                
+                pLm = Lhistlist[rind][m] / events
+                pLn = Lhistlist[rind][nah] / events
+                
+                mterm = math.exp(-2 * Lm / lstar * wvnmbr ** 2 * Db * tau)
+                nterm = math.exp(-2 * Ln / lstar * wvnmbr ** 2 * Db * tau)
+                
+                gcohterm = math.exp(-2 * (abs(Lm - Ln) / cohL))
+                lcohterm = math.exp(-2 * (abs(Lm - Ln) / cohL) ** 2)
+                
+                Lgintegral += pLm * mterm * pLn * nterm * gcohterm
+                Llintegral += pLm * mterm * pLn * nterm * lcohterm
+                
+        g2Lglist[rind] = np.append(g2Lglist[rind],1 + Lgintegral)
+        g2Lllist[rind] = np.append(g2Lglist[rind],1 + Llintegral)
+        
+        Yintegral = 0
+        
+        for g in range(0,int(Ybins / 5)):
+            
+            Yintegral += Yhistlist[rind][g] / events * math.exp(-2 * (g + 0.5) * (Ymax / Ybins) * wvnmbr ** 2 * Db * tau)
+            
+        g2Ylist[rind] = np.append(g2Ylist[rind],1 + Yintegral ** 2)
+        
+        r = rind * maxRad / radBin
+        alpha = 18.115 * r + 0.8807
+        beta = 0.2566 * (r + 0.000000001) ** -1.08
+        denom = (beta ** 2 + (4 * (beta / lstar) * wvnmbr ** 2 * Db * tau) + (((2 / lstar) * wvnmbr ** 2 * Db * tau) ** 2) + ((2 / cohL) ** 2))
+        g2nlist[rind] = np.append(g2nlist[rind],1 + (beta ** (2 * alpha)) / ((denom) ** alpha) * math.exp(-4 / lstar * wvnmbr ** 2 * Db * tau * r)) 
+        #variable holding a negative value can't be put to a variable exponent for some ungodly reason
+        #this causes it to blow up when cohL is really low and the denominator is negative
+        
+        print('rind: ' + str(rind) + ' tau: ' + str(tau))
+    
+totals = np.array(())
+for ttl in range(0,radBin):
+    
+    totals = np.append(totals,sum(Lhistlist[ttl]))
+    
+##save distributions into ASCII files
+#for Llstnum in range(0,radBin):
+#    
+#    lengths = np.arange(Lbins) / Lbins * max(Llistlist[Llstnum])
+#    histnrm = Lhistlist[Llstnum] / sum(Lhistlist[Llstnum])
+#    
+#    Lfile = open('PLD' + str(int(Llstnum) / radBin * maxRad) + '.txt','w') #create file
+#    
+#    for l,h in zip(lengths,histnrm):
+#        
+#        Lfile.write('%f\t%f\n'%(l,h))
+#        
+#    Lfile.close()
+#    
+#for Ylstnum in range(0,radBin):
+#    
+#    lengths = np.arange(Ybins) / Ybins * max(Ylistlist[Ylstnum])
+#    histnrm = Yhistlist[Ylstnum] / sum(Yhistlist[Ylstnum])
+#    
+#    Yfile = open('MTD' + str(int(Ylstnum) / radBin * maxRad) + '.txt','w') #create file
+#    
+#    for l,h in zip(lengths,histnrm):
+#        
+#        Yfile.write('%f\t%f\n'%(l,h))
+#        
+#    Yfile.close()
+#    
+#for nlstnum in range(0,radBin):
+#    
+#    lengths = np.arange(0,np.size(nhistlist[nlstnum]))
+#    histnrm = nhistlist[nlstnum] / sum(nhistlist[nlstnum])
+#    
+#    nfile = open('SED' + str(int(nlstnum) / radBin * maxRad) + '.txt','w') #create file
+#    
+#    for l,h in zip(lengths,histnrm):
+#        
+#        nfile.write('%f\t%f\n'%(l,h))
+#        
+#    nfile.close()
+#    
+#for glstnum in range(0,radBin):
+#    
+#    Lgg2s = g2Lglist[glstnum]
+#    Llg2s = g2Lllist[glstnum]
+#    Yg2s = g2Ylist[glstnum]
+#    ng2s = g2nlist[glstnum]
+#    
+#    gfile = open('g2' + str(int(glstnum) / radBin * maxRad) + '.txt','w')
+#    
+#    for t,Lgg,Llg,Yg,ng in zip(taus,Lgg2s,Llg2s,Yg2s,ng2s):
+#        
+#        gfile.write('%f\t%f\t%f\t%f\t%f\n'%(t,Lgg,Llg,Yg,ng))
+#        
+#    gfile.close()
